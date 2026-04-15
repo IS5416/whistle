@@ -1,0 +1,40 @@
+# whistle theme config (advanced)
+# Pass to whistle via: whistle build --config ./my-pet.yaml
+
+image: ./your-character.png
+
+# Theme identity
+name: my-pet            # theme id (kebab-case, no spaces)
+display_name: My Pet    # shown in clawd-on-desk theme menu
+
+# Eye pixel coordinates (in source image px)
+# If omitted, whistle auto-detects blue/navy eye clusters in the upper-central
+# region. For pixel-art sprites, manual coords are more reliable.
+eye_left:  [207, 277]
+eye_right: [255, 277]
+
+# Downsample grid for vector conversion.
+# 64 = very cheap, chunky pixels.  96 = balanced.  128 = detailed but heavier SVG.
+grid: 96
+
+# Optional: per-state animation parameters
+states:
+  idle:
+    sprite_anim: "breathe 1.6s ease-in-out infinite"
+  working:
+    sprite_anim: "bounce 0.4s ease-in-out infinite"
+  error:
+    sprite_anim: "shake 0.18s linear infinite"
+  attention:
+    sprite_anim: "jump 0.5s ease-in-out infinite"
+
+# Optional: decoration overlays (e.g. turning clawd into a specific character).
+# Each decoration is a list of rect overlays applied to every state SVG.
+decorations:
+  - name: "white streak"
+    group_class: "deco-streak"
+    animation: "deco-streak-sway 1.6s ease-in-out infinite"
+    transform_origin: "7px 6px"
+    rects:
+      - { x: 6.0, y: 6.0, w: 2.0, h: 1.0, fill: "#FFFFFF" }
+      - { x: 6.3, y: 7.0, w: 1.8, h: 1.0, fill: "#FFFFFF" }
