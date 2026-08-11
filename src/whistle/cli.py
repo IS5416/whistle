@@ -3,6 +3,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 from .vectorize import vectorize_sprite, runs_to_rect_xml
 from .eyes import eyes_js_xml
 from .theme import idle_svg, write_theme
@@ -35,7 +37,7 @@ def main() -> int:
     b.add_argument(
         "--out", type=Path, default=Path.home() / "Library/Application Support/clawd-on-desk/themes",
     )
-    b.add_argument("--grid", type=int, default=96, help="downsample grid size")
+    b.add_argument("--grid", type=int, default=160, help="downsample grid size (longest side)")
 
     args = p.parse_args()
 
@@ -54,9 +56,29 @@ def main() -> int:
             (right[0] - 15, right[1] - 15, right[0] + 15, right[1] + 15),
         ]
 
-        runs, grid = vectorize_sprite(args.image, grid_size=args.grid, eye_mask_boxes=mask_boxes)
-        sprite_xml = runs_to_rect_xml(runs, grid)
-        eyes_xml = eyes_js_xml(left, right)
+        img = Image.open(args.image)
+        runs, grid_w, grid_h = vectorize_sprite(
+            args.image, grid_size=args.grid, eye_mask_boxes=mask_boxes
+        )
+
+        # Fit sprite aspect into the 23×20 content box so clawd's normalized
+        # layout renders it undistorted.
+        aspect = img.width / img.height
+        scale = min(23.0 / aspect, 20.0)
+        content_w, content_h = aspect * scale, scale
+        content_x = -4.0 + (23.0 - content_w) / 2  # center box horizontally
+
+        sprite_xml = runs_to_rect_xml(
+            runs, grid_w, grid_h,
+            viewbox_origin=(content_x, -3.0),
+            viewbox_size=(content_w, content_h),
+        )
+        eyes_xml = eyes_js_xml(
+            left, right,
+            sprite_w=img.width, sprite_h=img.height,
+            viewbox_origin=(content_x, -3.0),
+            viewbox_size=(content_w, content_h),
+        )
         idle = idle_svg(sprite_xml, eyes_xml)
 
         # MVP: deliver idle only; other states copy idle placeholder.
@@ -75,6 +97,8 @@ def main() -> int:
             theme_id=args.name,
             name=args.display_name or args.name,
             svg_files=states,
+            content_w=content_w,
+            content_h=content_h,
         )
         print(f"✓ wrote {args.out / args.name}")
         print("  restart clawd-on-desk and right-click → Theme → select to enable")

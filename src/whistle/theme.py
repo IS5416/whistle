@@ -60,8 +60,15 @@ def theme_json(
     display_name: str,
     state_map: dict[str, str],
     eye_tracking_states: list[str],
+    content_w: float = 23.0,
+    content_h: float = 20.0,
 ) -> dict:
-    """Build theme.json dict."""
+    """Build theme.json dict.
+
+    content_w/h is the visible body box in viewBox units, aspect-matched to
+    the source sprite so clawd's normalized layout renders it undistorted.
+    """
+    ox = -4.0 + (23.0 - content_w) / 2  # center box horizontally
     return {
         "schemaVersion": 1,
         "id": theme_id,
@@ -71,9 +78,9 @@ def theme_json(
         "license": "Personal use",
         "viewBox": {"x": -15, "y": -25, "width": 45, "height": 45},
         "layout": {
-            "contentBox": {"x": -4, "y": -3, "width": 23, "height": 20},
-            "centerX": 7.5,
-            "baselineY": 17,
+            "contentBox": {"x": ox, "y": -3, "width": content_w, "height": content_h},
+            "centerX": ox + content_w / 2,
+            "baselineY": -3 + content_h,
             "visibleHeightRatio": 0.58,
             "baselineBottomRatio": 0.05,
         },
@@ -88,6 +95,9 @@ def theme_json(
             },
         },
         "states": {k: [v] for k, v in state_map.items()},
+        # ponytail: direct sleep sequence — whistle ships 8 states only;
+        # full mode would require yawning/dozing/collapsing states.
+        "sleepSequence": {"mode": "direct"},
         "hitBoxes": {
             "default": {"x": -1, "y": 5, "w": 17, "h": 12},
             "sleeping": {"x": -1, "y": 5, "w": 17, "h": 12},
@@ -102,7 +112,14 @@ def theme_json(
     }
 
 
-def write_theme(out_dir: Path, theme_id: str, name: str, svg_files: dict[str, str]) -> None:
+def write_theme(
+    out_dir: Path,
+    theme_id: str,
+    name: str,
+    svg_files: dict[str, str],
+    content_w: float = 23.0,
+    content_h: float = 20.0,
+) -> None:
     """Write theme.json + assets/*.svg to out_dir/theme_id/."""
     target = out_dir / theme_id
     (target / "assets").mkdir(parents=True, exist_ok=True)
@@ -111,5 +128,5 @@ def write_theme(out_dir: Path, theme_id: str, name: str, svg_files: dict[str, st
         fname = f"{state}.svg"
         (target / "assets" / fname).write_text(svg_text, encoding="utf-8")
         state_map[state] = fname
-    tj = theme_json(theme_id, name, state_map, list(svg_files.keys()))
+    tj = theme_json(theme_id, name, state_map, list(svg_files.keys()), content_w, content_h)
     (target / "theme.json").write_text(json.dumps(tj, indent=2), encoding="utf-8")

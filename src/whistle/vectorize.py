@@ -8,10 +8,13 @@ def vectorize_sprite(
     grid_size: int = 96,
     eye_mask_boxes: list[tuple[int, int, int, int]] | None = None,
     sclera_color: tuple[int, int, int, int] = (240, 244, 251, 255),
-) -> tuple[list[tuple[float, float, float, tuple[int, int, int]]], int]:
-    """Downsample sprite to grid_size × grid_size and RLE-merge horizontal runs.
+) -> tuple[list[tuple[float, float, float, tuple[int, int, int]]], int, int]:
+    """Downsample sprite to a grid_size-limited canvas, RLE-merge runs.
 
-    Returns (runs, grid) where runs is list of (x, y, w, (r,g,b)).
+    Canvas keeps the source aspect ratio (grid_size is the longest side), so
+    a portrait sprite stays portrait instead of being squished square.
+
+    Returns (runs, grid_w, grid_h): runs is list of (x, y, w, (r,g,b)).
     If eye_mask_boxes given, those regions are flattened to sclera_color
     (so the caller can overlay their own #eyes-js group).
     """
@@ -31,13 +34,16 @@ def vectorize_sprite(
                     if a > 0 and is_iris_like(r, g, b):
                         px[x, y] = sclera_color
 
-    small = img.resize((grid_size, grid_size), Image.NEAREST)
+    w, h = img.size
+    scale = min(grid_size / w, grid_size / h)
+    nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+    small = img.resize((nw, nh), Image.NEAREST)
     px = small.load()
     runs = []
-    for y in range(grid_size):
+    for y in range(nh):
         run_start = None
         run_color = None
-        for x in range(grid_size):
+        for x in range(nw):
             r, g, b, a = px[x, y]
             if a < 32:
                 if run_start is not None:
@@ -53,21 +59,26 @@ def vectorize_sprite(
                 run_start = x
                 run_color = color
         if run_start is not None:
-            runs.append((run_start, y, grid_size - run_start, run_color))
-    return runs, grid_size
+            runs.append((run_start, y, nw - run_start, run_color))
+    return runs, nw, nh
 
 
 def runs_to_rect_xml(
     runs,
-    grid: int,
+    grid_w: int,
+    grid_h: int,
     viewbox_origin: tuple[float, float] = (-4.0, -3.0),
     viewbox_size: tuple[float, float] = (23.0, 20.0),
 ) -> str:
-    """Serialize RLE runs into SVG <rect> xml fragment in viewBox coordinates."""
+    """Serialize RLE runs into SVG <rect> xml fragment in viewBox coordinates.
+
+    viewbox_size must match the canvas aspect (grid_w/grid_h) so scaling is
+    uniform and the sprite renders undistorted.
+    """
     ox, oy = viewbox_origin
     vw, vh = viewbox_size
-    cw = vw / grid
-    ch = vh / grid
+    cw = vw / grid_w
+    ch = vh / grid_h
     lines = []
     for x, y, w, (r, g, b) in runs:
         vx = ox + x * cw
