@@ -50,16 +50,8 @@ def main() -> int:
         left = args.eye_left or (207, 277)
         right = args.eye_right or (255, 277)
 
-        # eye mask: small box around each eye
-        mask_boxes = [
-            (left[0] - 15, left[1] - 15, left[0] + 15, left[1] + 15),
-            (right[0] - 15, right[1] - 15, right[0] + 15, right[1] + 15),
-        ]
-
         img = Image.open(args.image)
-        runs, grid_w, grid_h = vectorize_sprite(
-            args.image, grid_size=args.grid, eye_mask_boxes=mask_boxes
-        )
+        runs, grid_w, grid_h = vectorize_sprite(args.image, grid_size=args.grid)
 
         # Fit sprite aspect into the 23×20 content box so clawd's normalized
         # layout renders it undistorted.

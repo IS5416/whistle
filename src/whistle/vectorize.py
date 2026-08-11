@@ -6,8 +6,6 @@ from PIL import Image
 def vectorize_sprite(
     image_path: Path,
     grid_size: int = 96,
-    eye_mask_boxes: list[tuple[int, int, int, int]] | None = None,
-    sclera_color: tuple[int, int, int, int] = (240, 244, 251, 255),
 ) -> tuple[list[tuple[float, float, float, tuple[int, int, int]]], int, int]:
     """Downsample sprite to a grid_size-limited canvas, RLE-merge runs.
 
@@ -15,24 +13,8 @@ def vectorize_sprite(
     a portrait sprite stays portrait instead of being squished square.
 
     Returns (runs, grid_w, grid_h): runs is list of (x, y, w, (r,g,b)).
-    If eye_mask_boxes given, those regions are flattened to sclera_color
-    (so the caller can overlay their own #eyes-js group).
     """
     img = Image.open(image_path).convert("RGBA")
-
-    # Optional eye-pupil erase
-    if eye_mask_boxes:
-        px = img.load()
-
-        def is_iris_like(r: int, g: int, b: int) -> bool:
-            return b > 130 and r < 100 and (b - r) > 30
-
-        for x0, y0, x1, y1 in eye_mask_boxes:
-            for y in range(y0, y1):
-                for x in range(x0, x1):
-                    r, g, b, a = px[x, y]
-                    if a > 0 and is_iris_like(r, g, b):
-                        px[x, y] = sclera_color
 
     w, h = img.size
     scale = min(grid_size / w, grid_size / h)

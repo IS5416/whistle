@@ -12,13 +12,13 @@ def eyes_js_xml(
     eye_h: float = 0.7,
     highlight_w: float = 0.18,
     highlight_h: float = 0.18,
-    pupil_color: str = "#2D4F98",
+    pupil_color: str = "#000000",
     highlight_color: str = "#3AACDF",
 ) -> str:
-    """Build the <g id='eyes-js'> block with navy pupil + cyan highlight per eye.
+    """Build the <g id='eyes-js'> block with black pupil + cyan highlight per eye.
 
     viewbox_origin/size must match the sprite's content box (aspect-matched
-    to the source) so eyes land where the erased iris pixels were.
+    to the source) so eyes land where the source pupils are.
     """
     ox, oy = viewbox_origin
     vw, vh = viewbox_size
