@@ -8,7 +8,10 @@ SKELETON_TEMPLATE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -25 
     {defs}
   </defs>
   <style>
-    #sprite-anim {{ animation: {sprite_keyframe} {sprite_duration} ease-in-out infinite; }}
+    #sprite-anim {{
+      transform-origin: {origin_x}px {origin_y}px;
+      animation: {sprite_keyframe} {sprite_duration} ease-in-out infinite;
+    }}
     {style_extras}
   </style>
 
@@ -33,20 +36,90 @@ SKELETON_TEMPLATE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -25 
 """
 
 
-IDLE_KEYFRAME = """
+# Per-state animation: (keyframe name, duration). Kept inside the sprite so
+# Chromium-under-<object> renders it (clawd convention: CSS in SVG <style>).
+STATE_ANIMS = {
+    "idle": ("breathe", "1.6s"),
+    "thinking": ("think-sway", "2.2s"),
+    "working": ("bounce", "0.4s"),
+    "error": ("shake", "0.18s"),
+    "attention": ("jump", "0.5s"),
+    "notification": ("pulse", "0.8s"),
+    "sleeping": ("sleep-breathe", "3.2s"),
+    "waking": ("stretch", "1.4s"),
+}
+
+KEYFRAMES = {
+    "breathe": """
     @keyframes breathe {
       0%, 100% { transform: translateY(0); }
       50%      { transform: translateY(-0.3px); }
     }
-""".strip()
+    """,
+    "think-sway": """
+    @keyframes think-sway {
+      0%, 100% { transform: rotate(0deg) translateY(0); }
+      25%      { transform: rotate(-2deg) translateY(-0.4px); }
+      75%      { transform: rotate(2deg) translateY(-0.4px); }
+    }
+    """,
+    "bounce": """
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.8px); }
+    }
+    """,
+    "shake": """
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25%      { transform: translateX(-0.6px); }
+      75%      { transform: translateX(0.6px); }
+    }
+    """,
+    "jump": """
+    @keyframes jump {
+      0%, 100% { transform: translateY(0); }
+      30%      { transform: translateY(-1.2px); }
+      55%      { transform: translateY(0); }
+    }
+    """,
+    "pulse": """
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.04, 0.98); }
+    }
+    """,
+    "sleep-breathe": """
+    @keyframes sleep-breathe {
+      0%, 100% { transform: translateY(0.2px) scale(1, 1); }
+      50%      { transform: translateY(0.2px) scale(1.03, 0.96); }
+    }
+    """,
+    "stretch": """
+    @keyframes stretch {
+      0%, 100% { transform: scale(1, 1); }
+      50%      { transform: scale(0.94, 1.08); }
+    }
+    """,
+}
 
 
-def idle_svg(sprite_rects_xml: str, eyes_js_block: str) -> str:
+def state_svg(
+    state: str,
+    sprite_rects_xml: str,
+    eyes_js_block: str,
+    origin_cx: float = 7.5,
+    origin_cy: float = 7.0,
+) -> str:
+    """Compose one state SVG: sprite + eyes + per-state animation."""
+    keyframe, duration = STATE_ANIMS[state]
     return SKELETON_TEMPLATE.format(
         defs="",
-        sprite_keyframe="breathe",
-        sprite_duration="1.6s",
-        style_extras=IDLE_KEYFRAME,
+        origin_x=f"{origin_cx:.2f}",
+        origin_y=f"{origin_cy:.2f}",
+        sprite_keyframe=keyframe,
+        sprite_duration=duration,
+        style_extras=KEYFRAMES[keyframe],
         overlay_back="",
         sprite_rects=sprite_rects_xml,
         tint="",
@@ -67,8 +140,19 @@ def theme_json(
 
     content_w/h is the visible body box in viewBox units, aspect-matched to
     the source sprite so clawd's normalized layout renders it undistorted.
+    eye_tracking_states: SVG states carrying #eyes-js (empty for APNG themes).
     """
     ox = -4.0 + (23.0 - content_w) / 2  # center box horizontally
+    eye_tracking = {"enabled": False} if not eye_tracking_states else {
+        "enabled": True,
+        "states": eye_tracking_states,
+        "maxOffset": 0.5,
+        "ids": {
+            "eyes": "eyes-js",
+            "body": "body-js",
+            "shadow": "shadow-js",
+        },
+    }
     return {
         "schemaVersion": 1,
         "id": theme_id,
@@ -84,16 +168,7 @@ def theme_json(
             "visibleHeightRatio": 0.58,
             "baselineBottomRatio": 0.05,
         },
-        "eyeTracking": {
-            "enabled": True,
-            "states": eye_tracking_states,
-            "maxOffset": 0.5,
-            "ids": {
-                "eyes": "eyes-js",
-                "body": "body-js",
-                "shadow": "shadow-js",
-            },
-        },
+        "eyeTracking": eye_tracking,
         "states": {k: [v] for k, v in state_map.items()},
         # ponytail: direct sleep sequence — whistle ships 8 states only;
         # full mode would require yawning/dozing/collapsing states.
@@ -116,17 +191,29 @@ def write_theme(
     out_dir: Path,
     theme_id: str,
     name: str,
-    svg_files: dict[str, str],
+    svg_files: dict[str, str | bytes],
+    eye_states: list[str] | None = None,
     content_w: float = 23.0,
     content_h: float = 20.0,
 ) -> None:
-    """Write theme.json + assets/*.svg to out_dir/theme_id/."""
+    """Write theme.json + assets/* to out_dir/theme_id/.
+
+    str values are written as .svg, bytes as .apng (frame-animated states).
+    eye_states: which states carry #eyes-js (SVG only); defaults to all SVGs.
+    """
     target = out_dir / theme_id
     (target / "assets").mkdir(parents=True, exist_ok=True)
     state_map = {}
-    for state, svg_text in svg_files.items():
-        fname = f"{state}.svg"
-        (target / "assets" / fname).write_text(svg_text, encoding="utf-8")
+    for state, data in svg_files.items():
+        ext = "svg" if isinstance(data, str) else "apng"
+        fname = f"{state}.{ext}"
+        target_path = target / "assets" / fname
+        if isinstance(data, bytes):
+            target_path.write_bytes(data)
+        else:
+            target_path.write_text(data, encoding="utf-8")
         state_map[state] = fname
-    tj = theme_json(theme_id, name, state_map, list(svg_files.keys()), content_w, content_h)
+    if eye_states is None:
+        eye_states = [s for s, d in svg_files.items() if isinstance(d, str)]
+    tj = theme_json(theme_id, name, state_map, eye_states, content_w, content_h)
     (target / "theme.json").write_text(json.dumps(tj, indent=2), encoding="utf-8")

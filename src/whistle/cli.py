@@ -5,14 +5,49 @@ from pathlib import Path
 
 from PIL import Image
 
-from .vectorize import vectorize_sprite, runs_to_rect_xml
+from .vectorize import vectorize_sprite, runs_to_rect_xml, sheet_apng
 from .eyes import eyes_js_xml
-from .theme import idle_svg, write_theme
+from .theme import state_svg, write_theme, STATE_ANIMS
 
 
 def parse_coord(s: str) -> tuple[int, int]:
     x, y = s.split(",")
     return int(x), int(y)
+
+
+# Spritesheet → clawd state mapping: (row, frames, ms/frame).
+# Rows are 0-indexed top-down; sleeping/waking reuse the idle row at
+# slower/faster playback (no dedicated sleep art in most sheets).
+SHEET_STATES = {
+    "idle": (0, 6, 125),
+    "thinking": (7, 6, 150),
+    "working": (8, 6, 90),
+    "error": (5, 8, 80),
+    "attention": (4, 5, 100),
+    "notification": (3, 4, 110),
+    "sleeping": (0, 6, 300),
+    "waking": (0, 6, 80),
+}
+
+
+def build_sheet_theme(args) -> int:
+    """Slice spritesheet rows into per-state APNGs (no eyes — frame art has
+    its own). Cell size defaults to sheet width/8 (rows are 8 frames wide)."""
+    if not args.sheet.exists():
+        print(f"error: sheet not found: {args.sheet}", file=sys.stderr)
+        return 1
+    with Image.open(args.sheet) as im:
+        sheet_w, sheet_h = im.size
+    cell_w, cell_h = args.sheet_cell or (sheet_w // 8, sheet_h // 9)
+
+    states = {
+        state: sheet_apng(args.sheet, cell_w, cell_h, row, frames, duration)
+        for state, (row, frames, duration) in SHEET_STATES.items()
+    }
+    write_theme(args.out, theme_id=args.name, name=args.display_name or args.name, svg_files=states)
+    print(f"✓ wrote {args.out / args.name} (APNG frame animation)")
+    print("  restart clawd-on-desk and right-click → Theme → select to enable")
+    return 0
 
 
 def main() -> int:
@@ -22,8 +57,12 @@ def main() -> int:
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    b = sub.add_parser("build", help="Build a theme from an image")
-    b.add_argument("--image", required=True, type=Path)
+    b = sub.add_parser("build", help="Build a theme from an image or spritesheet")
+    src = b.add_mutually_exclusive_group(required=True)
+    src.add_argument("--image", type=Path, help="static sprite PNG/GIF (SVG theme)")
+    src.add_argument("--sheet", type=Path, help="animation spritesheet (APNG theme)")
+    b.add_argument("--sheet-cell", type=parse_coord, default=None,
+                   help="spritesheet cell size w,h (default: auto from sheet size)")
     b.add_argument("--name", required=True, help="theme id (kebab-case)")
     b.add_argument("--display-name", default=None, help="human-readable name")
     b.add_argument(
@@ -42,6 +81,8 @@ def main() -> int:
     args = p.parse_args()
 
     if args.cmd == "build":
+        if args.sheet:
+            return build_sheet_theme(args)
         if not args.image.exists():
             print(f"error: image not found: {args.image}", file=sys.stderr)
             return 1
@@ -71,18 +112,13 @@ def main() -> int:
             viewbox_origin=(content_x, -3.0),
             viewbox_size=(content_w, content_h),
         )
-        idle = idle_svg(sprite_xml, eyes_xml)
 
-        # MVP: deliver idle only; other states copy idle placeholder.
+        # Per-state animation, all sharing the sprite + eyes markup.
+        origin_cx = content_x + content_w / 2
+        origin_cy = -3.0 + content_h / 2
         states = {
-            "idle": idle,
-            "thinking": idle,
-            "working": idle,
-            "error": idle,
-            "attention": idle,
-            "notification": idle,
-            "sleeping": idle,
-            "waking": idle,
+            state: state_svg(state, sprite_xml, eyes_xml, origin_cx, origin_cy)
+            for state in STATE_ANIMS
         }
         write_theme(
             args.out,

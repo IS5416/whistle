@@ -1,4 +1,5 @@
 """Sprite → SVG vector rects (RLE-merged per row)."""
+import io
 from pathlib import Path
 from PIL import Image
 
@@ -72,3 +73,26 @@ def runs_to_rect_xml(
             f'height="{vh_:.3f}" fill="#{r:02x}{g:02x}{b:02x}"/>'
         )
     return "\n      ".join(lines)
+
+
+def sheet_apng(
+    sheet_path: Path,
+    cell_w: int,
+    cell_h: int,
+    row: int,
+    n_frames: int,
+    duration_ms: int = 125,
+) -> bytes:
+    """Slice one row of a spritesheet into an APNG (clawd's frame-animation
+    format — same one calico uses, ~125ms/frame)."""
+    im = Image.open(sheet_path)
+    frames = [
+        im.crop((x * cell_w, row * cell_h, (x + 1) * cell_w, (row + 1) * cell_h)).copy()
+        for x in range(n_frames)
+    ]
+    out = io.BytesIO()
+    frames[0].save(
+        out, format="PNG", save_all=True, append_images=frames[1:],
+        duration=duration_ms, loop=0,
+    )
+    return out.getvalue()
